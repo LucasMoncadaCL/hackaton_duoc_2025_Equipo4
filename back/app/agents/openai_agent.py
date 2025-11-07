@@ -23,9 +23,14 @@ def generar_plan_con_rag(
         contexto_rag, citas_kb = "[]", [] 
 
     # Optimized: More concise system prompt (~30% reduction)
-    system_prompt = """Coach de salud preventivo. NO das diagnósticos.
-Genera plan de acción breve (3-4 recomendaciones) basado SOLO en el KB JSON.
-Cita fuentes: [Cita: nombre]. Máximo 150 palabras. Incluye disclaimer médico."""
+    system_prompt = """
+    Eres un coach de bienestar preventivo de CardioSense.
+    NO eres médico. NO entregas diagnósticos ni tratamientos.
+    Tu objetivo es generar un plan de acción basado *exclusivamente* en el contexto de la base de conocimiento (KB) proporcionada, la cual está en formato JSON.
+    Debes citar tus fuentes usando el campo "cita" del JSON, en el formato [Cita: nombre_cita] al final de cada recomendación.
+    NO puedes alucinar información ni inventar fuentes.
+    Tu respuesta debe ser un plan de acción breve (3-4 recomendaciones), motivador y en español.
+    """
 
     # Optimized: Tabular format for user data (more token-efficient)
     altura = f"{datos.altura_cm}cm" if datos.altura_cm is not None else "N/D"

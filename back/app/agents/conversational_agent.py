@@ -1,24 +1,20 @@
+# back/app/agents/conversational_agent.py
 import logging
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from typing import List, Literal
+import json # Importa json
 
 from app.core.config import settings
-from app.schemas.analisis_schema import AnalisisEntrada, PrediccionResultado
+# Asegúrate de que las rutas de importación sean correctas
+from app.schemas.analisis_schema import AnalisisEntrada
 from app.services.ml_service import obtener_prediccion
 from app.agents.openai_agent import generar_plan_con_rag
-from app.agents.sliding_window import get_optimized_history
-from app.utils.token_counter import count_messages_tokens, estimate_cost
 
 logger = logging.getLogger(__name__)
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 # 1. Definición de la "Herramienta" (Tool Calling)
-# El LLM intentará llenar este objeto Pydantic.
-
-# Usamos AnalisisEntrada, pero lo re-definimos aquí para
-# que Pydantic pueda generar un schema de tool-call limpio.
-# Nota: Hacemos todos los campos REQUERIDOS.
 class PredictionData(BaseModel):
     """
     Datos requeridos para ejecutar una predicción de salud.
@@ -28,19 +24,12 @@ class PredictionData(BaseModel):
     genero: Literal['M', 'F'] = Field(..., description="Sexo biológico del usuario (M o F).")
     imc: float = Field(..., description="Índice de Masa Corporal (ej: 25.4).")
     circunferencia_cintura: float = Field(..., description="Circunferencia de cintura en centímetros (ej: 92.5).")
-    altura_cm: float = Field(..., description="Altura del usuario en centímetros (ej: 170).")
-    peso_kg: float = Field(..., description="Peso del usuario en kilogramos (ej: 75.5).")
     presion_sistolica: float = Field(..., description="Presión arterial sistólica (el número más alto, ej: 120).")
     colesterol_total: float = Field(..., description="Nivel de colesterol total (ej: 200).")
     tabaquismo: bool = Field(..., description="¿El usuario fuma? (true/false).")
     actividad_fisica: str = Field(..., description="Nivel de actividad física (ej: 'sedentario', 'moderado', 'activo').")
     horas_sueno: float = Field(..., description="Horas de sueño promedio por noche (ej: 7.5).")
-    glucosa_mgdl: Optional[float] = Field(None, description="Nivel de glucosa en sangre (mg/dL), si está disponible.")
-    hdl_mgdl: Optional[float] = Field(None, description="Colesterol HDL en mg/dL (opcional).")
-    trigliceridos_mgdl: Optional[float] = Field(None, description="Triglicéridos en mg/dL (opcional).")
-    ldl_mgdl: Optional[float] = Field(None, description="Colesterol LDL en mg/dL (opcional).")
     
-    # Nuevo campo de tu requisito: decidir el modelo
     modelo_a_usar: Literal['diabetes', 'cardiovascular'] = Field(
         ..., 
         description="Basado en la conversación, decide qué modelo es más relevante. "
@@ -48,26 +37,35 @@ class PredictionData(BaseModel):
                     "Usa 'cardiovascular' si es presión arterial, colesterol o tabaquismo."
     )
 
-# 2. El Prompt del Sistema
+# 2. El Prompt del Sistema (¡MODIFICADO CON GUARDRAILS!)
+SYSTEM_PROMPT = SYSTEM_PROMPT = """
+Eres un agente de salud conversacional de CardioSense.
+Tu identidad es ser un asistente de salud empático y profesional de CardioSense.
 
-SYSTEM_PROMPT = """
-Eres un Asistente de Salud IA empático y profesional.
-Tu objetivo principal es recolectar la información necesaria para realizar una evaluación de riesgo.
-Los datos que necesitas están definidos en la herramienta 'submit_for_prediction'.
-NO pidas todos los datos a la vez. Hazlo de forma natural, una o dos preguntas por vez.
-Sé amable y conversacional. Si el usuario da información no solicitada, tómala.
-Una vez que tengas TODOS los datos requeridos, y SÓLO entonces, llama a la herramienta 'submit_for_prediction'.
-Si te faltan datos, NO llames a la herramienta. En su lugar, haz la siguiente pregunta para obtener los datos faltantes.
+Tus objetivos principales son dos:
+1.  **Dar Recomendaciones:** Responder preguntas generales sobre salud cardiovascular, bienestar, dieta y ejercicio.
+2.  **Recolectar Datos:** Guiar al usuario para recolectar la información necesaria para una evaluación de riesgo (definida en la herramienta 'submit_for_prediction').
+
+REGLAS ESTRICTAS DE IDENTIDAD Y GUARDRAILS:
+1.  **Identidad:** NUNCA digas que eres un "modelo de IA", "ChatGPT", "un bot" o "un programa". Eres un "agente de salud de CardioSense" o "tu asistente de CardioSense".
+2.  **Enfoque:** Tu conocimiento se limita a la salud y el bienestar.
+3.  **Desvío Amable:** Si el usuario pregunta por temas *completamente no relacionados* (como política, deportes, chistes, finanzas, etc.), debes desviarlo amablemente.
+4.  **Respuesta de Desvío:** Para temas no relacionados, responde: 'Mi especialidad es la salud cardiovascular. No tengo información sobre otros temas. ¿Hay algo relacionado con tu bienestar en lo que pueda ayudarte?'
+5.  **NO ERES MÉDICO:** Nunca des un diagnóstico. Tus recomendaciones son de bienestar general. Siempre debes alentar al usuario a consultar a un profesional de la salud si tiene dudas serias.
+
+FLUJO DE RECOLECCIÓN:
+-   Si el usuario pide una evaluación de riesgo, inicia la recolección de datos.
+-   Los datos que necesitas están definidos en la herramienta 'submit_for_prediction'.
+-   Pide los datos de forma natural, una o dos preguntas por vez.
+-   Una vez que tengas TODOS los datos requeridos, y SÓLO entonces, llama a la herramienta 'submit_for_prediction'.
+-   Si te faltan datos, NO llames a la herramienta. En su lugar, haz la siguiente pregunta para obtener los datos faltantes.
 """
 
 TOOLS = [
     {
         "type": "function",
-        "function": {
-            "name": "submit_for_prediction",
-            "description": "Enviar datos de salud completos para realizar predicción de riesgo cardiometabólico",
-            "parameters": PredictionData.model_json_schema()
-        }
+        # Usamos .model_json_schema() para la nueva versión de Pydantic
+        "function": PredictionData.model_json_schema() 
     }
 ]
 
@@ -76,11 +74,6 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
     """
     Procesa un mensaje de usuario y decide el siguiente paso.
     
-    Ahora con optimización de tokens:
-    - Aplica sliding window al historial
-    - Registra uso de tokens
-    - Mantiene contexto relevante
-    
     Returns:
         - response_content (str): La respuesta de texto del agente.
         - assessment_result (dict): El resultado de la predicción (si se hizo).
@@ -88,48 +81,15 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
     """
     logger.info(f"Procesando historial de {len(history)} mensajes.")
     
-    # 1. Aplicar sliding window al historial
-    optimized_history = get_optimized_history(
-        history, 
-        max_tokens=settings.TOKEN_BUDGET_HISTORY
-    )
-    
-    # Log de optimización
-    original_tokens = count_messages_tokens(history)
-    optimized_tokens = count_messages_tokens(optimized_history)
-    tokens_saved = original_tokens - optimized_tokens
-    
-    if tokens_saved > 0:
-        logger.info(f"✂️  Sliding window aplicado: {original_tokens} → {optimized_tokens} tokens (ahorro: {tokens_saved})")
-    else:
-        logger.info(f"📊 Historial optimizado: {optimized_tokens} tokens (sin compresión necesaria)")
-    
-    # 2. Construir mensajes para OpenAI
-    system_message = {"role": "system", "content": SYSTEM_PROMPT}
-    messages_for_api = [system_message] + optimized_history
-    
-    # Contar tokens totales de entrada
-    input_tokens = count_messages_tokens(messages_for_api)
-    logger.info(f"📨 Tokens de entrada: {input_tokens} (sistema: {count_messages_tokens([system_message])}, historial: {optimized_tokens})")
-    
-    # 3. Llamar a OpenAI con el historial optimizado
+    # 1. Llamar a OpenAI con el historial y las herramientas
     try:
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages_for_api,
+            model="gpt-4o-mini", 
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
             tools=TOOLS,
             tool_choice="auto"
         )
         response_message = completion.choices[0].message
-        
-        # Registrar uso de tokens de la API
-        usage = completion.usage
-        if usage:
-            output_tokens = usage.completion_tokens
-            total_tokens = usage.total_tokens
-            cost = estimate_cost(usage.prompt_tokens, output_tokens)
-            logger.info(f"💰 API Usage: {usage.prompt_tokens} in + {output_tokens} out = {total_tokens} total (~${cost:.4f})")
-        
     except Exception as e:
         logger.error(f"Error en API de OpenAI: {e}")
         return "Lo siento, tuve un problema al procesar tu solicitud. Intenta de nuevo.", None, False
@@ -141,64 +101,49 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
     if tool_calls:
         logger.info("OpenAI solicitó una llamada a herramienta. ¡Extrayendo datos!")
         try:
-            # Asumimos que llama a la primera (y única) herramienta
             tool_call = tool_calls[0]
+            # Validamos el JSON que nos pasó el LLM
             tool_data = PredictionData.model_validate_json(tool_call.function.arguments)
             
-            # ¡ÉXITO! Tenemos el JSON estructurado.
-            # Ahora seguimos el flujo que TÚ describiste.
-            
-            # 2a. Decidir el modelo (según el LLM)
             modelo_elegido = tool_data.modelo_a_usar
             logger.info(f"Modelo elegido por el agente: {modelo_elegido}")
             
-            # 2b. Llamar al servicio de predicción (nuestro /predict)
-            # Pasamos los datos como AnalisisEntrada
-            # (El schema es casi idéntico, Pydantic se encarga)
-            tool_payload = tool_data.model_dump()
-            modelo_elegido = tool_payload.pop("modelo_a_usar")
-
-            ml_input = AnalisisEntrada(
-                modelo=modelo_elegido,
-                **tool_payload
-            )
+            # Convertimos los datos de Pydantic a un schema AnalisisEntrada
+            # El schema de Pydantic se encarga de la conversión
+            ml_input_data = tool_data.model_dump()
+            # Añadimos 'fecha' si no está, aunque el modelo ML no la use
+            ml_input_data.setdefault('fecha', '2025-01-01') 
             
-            # Aquí es donde realmente llamarías al modelo de 'diabetes' o 'cardiovascular'
-            # Por ahora, ambos llaman al mismo servicio de Colab
-            pred_result = obtener_prediccion(ml_input, model_type=modelo_elegido)
+            ml_input = AnalisisEntrada(**ml_input_data) 
+            
+            # Llamamos al servicio de ML
+            # NOTA: Aquí deberías tener lógica para elegir el endpoint
+            # correcto basado en 'modelo_elegido'.
+            # Por ahora, usamos el 'obtener_prediccion' genérico.
+            pred_result = obtener_prediccion(ml_input)
             
             if "error" in pred_result:
                 return f"Tuve problemas al calcular tu predicción: {pred_result['error']}", None, False
 
-            # 2c. Generar respuesta humanizada (nuestro /coach RAG)
-            # Usamos el resultado de la predicción y los datos de entrada
-            prediccion_schema = PrediccionResultado(
-                score=pred_result['score'],
-                drivers=pred_result['drivers'],
-                categoria_riesgo=pred_result['categoria_riesgo'],
-                model_used=pred_result.get('model_used', modelo_elegido)
-            )
-
+            # Generar respuesta humanizada (nuestro /coach RAG)
             plan_ia, citas_kb = generar_plan_con_rag(
-                prediccion=prediccion_schema,
+                prediccion=pred_result,
                 datos=ml_input
             )
 
-            # 2d. Preparar el resultado final
+            # Preparar el resultado final
             final_response_text = (
                 f"¡Gracias! He completado tu evaluación (usando el modelo de {modelo_elegido}).\n\n"
                 f"**Resultado:** Tu riesgo es **{pred_result['categoria_riesgo']}**.\n\n"
                 f"**Plan de Acción:**\n{plan_ia}"
             )
             
+            # Preparamos el dict para la tabla 'assessments'
             assessment_data = {
                 "assessment_data": tool_data.model_dump(),
                 "risk_score": pred_result['score'],
                 "risk_level": pred_result['categoria_riesgo'].lower(), # 'low', 'moderate', 'high'
-                "drivers": pred_result['drivers'],
-                "model_used": pred_result.get('model_used', modelo_elegido),
-                "plan_text": plan_ia,
-                "citations": citas_kb
+                "drivers": json.dumps(pred_result['drivers']) # Aseguramos que 'drivers' sea JSON
             }
             
             return final_response_text, assessment_data, True
@@ -207,8 +152,8 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
             logger.error(f"Error al procesar la llamada a herramienta: {e}")
             return "Parece que tengo todos tus datos, pero tuve un problema al procesarlos. ¿Podrías confirmarlos?", None, False
 
-    # CASO B: El LLM NO llamó a la herramienta (Sigue preguntando)
+    # CASO B: El LLM NO llamó a la herramienta (Sigue preguntando o desvía)
     else:
-        logger.info("OpenAI respondió con texto (sigue recolectando datos).")
+        logger.info("OpenAI respondió con texto (recolectando datos o desviando).")
         response_text = response_message.content
         return response_text, None, False
