@@ -6,8 +6,11 @@ Este script descarga archivos .XPT de NHANES usando la estructura de URL correct
 Si la descarga automática falla, proporciona instrucciones claras para descarga manual.
 
 Uso:
-    python descargar_nhanes.py --cycle 2017-2018 --module DEMO
-    python descargar_nhanes.py --ciclo 2017-2018 --modulo DEMO EXAM LAB
+    # Descargar datasets puntuales
+    python descargar_nhanes.py --cycle 2017-2018 --module DEMO BMX BPX
+    
+    # Usar paquetes predefinidos
+    python descargar_nhanes.py --cycle 2017-2018 --bundle full-model
 """
 
 import argparse
@@ -29,12 +32,42 @@ CYCLE_TO_LETTER = {
     '2017-2018': 'J'
 }
 
-MODULE_NAMES = {
+DATASET_DESCRIPTIONS = {
     'DEMO': 'Demographics',
-    'EXAM': 'Examination',
-    'LAB': 'Laboratory',
-    'QUEST': 'Questionnaire',
-    'DIET': 'Dietary'
+    'BMX': 'Body Measures',
+    'BPX': 'Blood Pressure',
+    'GHB': 'Glycohemoglobin (HbA1c)',
+    'GLU': 'Plasma Fasting Glucose',
+    'TRIGLY': 'Triglycerides & LDL Cholesterol',
+    'TCHOL': 'Total Cholesterol',
+    'HDL': 'HDL Cholesterol',
+    'INS': 'Insulin',
+    'HSCRP': 'High-Sensitivity C-Reactive Protein',
+    'SMQ': 'Smoking (Cigarette Use)',
+    'PAQ': 'Physical Activity',
+    'SLQ': 'Sleep Disorders',
+    'ALQ': 'Alcohol Use',
+    'DR1TOT': 'Dietary Intake (Day 1 Totals)',
+    'EXAM': 'Examination bundle',
+    'LAB': 'Laboratory bundle',
+    'QUEST': 'Questionnaire bundle',
+    'DIET': 'Dietary bundle'
+}
+
+MODULE_ALIASES = {
+    'EXAM': ['BMX', 'BPX'],
+    'LAB': ['GHB', 'GLU', 'TRIGLY', 'TCHOL', 'HDL', 'INS', 'HSCRP'],
+    'QUEST': ['SMQ', 'PAQ', 'SLQ', 'ALQ'],
+    'DIET': ['DR1TOT']
+}
+
+PRESET_BUNDLES = {
+    'CORE': ['DEMO', 'BMX', 'BPX', 'GHB', 'GLU'],
+    'LAB_ONLY': ['GHB', 'GLU', 'TRIGLY', 'TCHOL', 'HDL', 'INS', 'HSCRP'],
+    'FULL_MODEL': [
+        'DEMO', 'BMX', 'BPX', 'GHB', 'GLU', 'TRIGLY', 'TCHOL', 'HDL',
+        'INS', 'HSCRP', 'SMQ', 'PAQ', 'SLQ', 'ALQ', 'DR1TOT'
+    ],
 }
 
 
@@ -153,7 +186,7 @@ def download_nhanes_file(cycle: str, module: str, output_dir: Path = Path('./dat
     ]
     
     print(f"📥 Descargando {filename}")
-    print(f"   Ciclo: {cycle} ({MODULE_NAMES.get(module, module)})")
+    print(f"   Ciclo: {cycle} ({DATASET_DESCRIPTIONS.get(module, module)})")
     print(f"   Año en URL: {year}")
     print()
     
@@ -208,13 +241,13 @@ def download_nhanes_file(cycle: str, module: str, output_dir: Path = Path('./dat
     print()
     print(f"1. Ve a: https://wwwn.cdc.gov/nchs/nhanes/Default.aspx")
     print(f"2. Selecciona el ciclo: {cycle}")
-    print(f"3. Busca el módulo: {MODULE_NAMES.get(module, module)}")
+    print(f"3. Busca el módulo: {DATASET_DESCRIPTIONS.get(module, module)}")
     print(f"4. Descarga el archivo: {filename}")
     print(f"5. Colócalo en: {output_file}")
     print()
     print(f"📋 Información del archivo:")
     print(f"   - Nombre esperado: {filename}")
-    print(f"   - Módulo: {MODULE_NAMES.get(module, module)}")
+    print(f"   - Módulo: {DATASET_DESCRIPTIONS.get(module, module)}")
     print(f"   - Ciclo: {cycle}")
     print(f"   - Letra: {letter}")
     print()
@@ -229,22 +262,24 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:
-  # Descargar un módulo
-  python descargar_nhanes.py --cycle 2017-2018 --module DEMO
+  # Descargar datasets específicos
+  python descargar_nhanes.py --cycle 2017-2018 --module DEMO BMX BPX
   
-  # Descargar múltiples módulos
-  python descargar_nhanes.py --cycle 2017-2018 --module DEMO EXAM LAB
+  # Descargar los datasets clave del modelo
+  python descargar_nhanes.py --cycle 2017-2018 --bundle full-model
   
-  # Descargar usando nombres en español
-  python descargar_nhanes.py --ciclo 2017-2018 --modulo DEMO EXAM LAB
+  # Combinar bundles y módulos individuales
+  python descargar_nhanes.py --ciclo 2017-2018 --bundle core --modulo TRIGLY HSCRP
         """
     )
     
     # Soporte para español e inglés
     parser.add_argument('--cycle', '--ciclo', dest='cycle', required=True,
                        help='Ciclo de NHANES (ej: 2017-2018)')
-    parser.add_argument('--module', '--modulo', dest='modules', nargs='+', required=True,
-                       help='Módulos a descargar (DEMO, EXAM, LAB, QUEST, DIET)')
+    parser.add_argument('--module', '--modulo', dest='modules', nargs='+',
+                       help='Datasets a descargar (ej: DEMO, BMX, BPX, GHB, GLU, etc.)')
+    parser.add_argument('--bundle', '--paquete', dest='bundles', nargs='+',
+                       help='Paquetes predefinidos: core, lab-only, full-model')
     parser.add_argument('--output-dir', '--directorio-salida', dest='output_dir',
                        default='./data', help='Directorio donde guardar archivos')
     
@@ -264,23 +299,72 @@ Ejemplos:
         print(f"   Ciclos válidos: {', '.join(CYCLE_TO_LETTER.keys())}")
         sys.exit(1)
     
-    # Validar módulos
-    valid_modules = set(MODULE_NAMES.keys())
-    invalid_modules = [m for m in args.modules if m.upper() not in valid_modules]
-    if invalid_modules:
-        print(f"❌ Módulos no válidos: {', '.join(invalid_modules)}")
-        print(f"   Módulos válidos: {', '.join(valid_modules)}")
+    def normalize_key(value: str) -> str:
+        return value.replace('-', '_').upper()
+    
+    requested_modules = []
+    
+    if args.bundles:
+        available_bundles = {key: PRESET_BUNDLES[key] for key in PRESET_BUNDLES}
+        for bundle in args.bundles:
+            bundle_key = normalize_key(bundle)
+            if bundle_key not in available_bundles:
+                readable_bundles = ', '.join(sorted(name.lower().replace('_', '-') for name in available_bundles))
+                print(f"❌ Bundle no válido: {bundle}")
+                print(f"   Bundles disponibles: {readable_bundles}")
+                sys.exit(1)
+            requested_modules.extend(available_bundles[bundle_key])
+    
+    if args.modules:
+        requested_modules.extend(normalize_key(m) for m in args.modules)
+    
+    if not requested_modules:
+        print("❌ Debes indicar al menos un módulo (--module) o un bundle predefinido (--bundle).")
         sys.exit(1)
     
-    # Descargar cada módulo
+    # Expandir alias (EXAM, LAB, etc.) y validar datasets
+    expanded_modules = []
+    invalid_modules = []
+    seen = set()
+    
+    def add_dataset(dataset_code: str):
+        if dataset_code not in DATASET_DESCRIPTIONS:
+            invalid_modules.append(dataset_code)
+            return
+        if dataset_code not in seen:
+            seen.add(dataset_code)
+            expanded_modules.append(dataset_code)
+    
+    for module in requested_modules:
+        if module in MODULE_ALIASES:
+            for dataset in MODULE_ALIASES[module]:
+                add_dataset(dataset)
+        else:
+            if module not in DATASET_DESCRIPTIONS:
+                invalid_modules.append(module)
+            else:
+                add_dataset(module)
+    
+    if invalid_modules:
+        valid_inputs = sorted({key.lower() for key in DATASET_DESCRIPTIONS} | {key.lower() for key in MODULE_ALIASES})
+        print(f"❌ Módulos no válidos: {', '.join(sorted(set(invalid_modules)))}")
+        print(f"   Valores permitidos: {', '.join(valid_inputs)}")
+        sys.exit(1)
+    
+    print("🎯 Datasets objetivo:")
+    for module in expanded_modules:
+        readable = DATASET_DESCRIPTIONS.get(module, module)
+        print(f"   - {module} ({readable})")
+    print()
+    
+    # Descargar cada dataset
     downloaded = []
     failed = []
     
-    for module in args.modules:
-        module = module.upper()
+    for module in expanded_modules:
         result = download_nhanes_file(args.cycle, module, output_dir)
         if result:
-            downloaded.append(result)
+            downloaded.append((module, result))
         else:
             failed.append(module)
         print()
@@ -293,9 +377,10 @@ Ejemplos:
     
     if downloaded:
         print(f"✅ Archivos descargados exitosamente: {len(downloaded)}")
-        for f in downloaded:
-            size = f.stat().st_size
-            print(f"   - {f.name} ({size / (1024*1024):.2f} MB)")
+        for module, path in downloaded:
+            size = path.stat().st_size
+            readable = DATASET_DESCRIPTIONS.get(module, module)
+            print(f"   - {path.name} ({readable}) → {size / (1024*1024):.2f} MB")
         print()
         print("💡 Próximo paso: Convierte a CSV usando:")
         print("   python convertir_nhanes.py")
@@ -303,7 +388,8 @@ Ejemplos:
     if failed:
         print(f"⚠️  Archivos que requieren descarga manual: {len(failed)}")
         for m in failed:
-            print(f"   - {m}")
+            readable = DATASET_DESCRIPTIONS.get(m, m)
+            print(f"   - {m} ({readable})")
         print()
         print("💡 Descarga manual desde:")
         print("   https://wwwn.cdc.gov/nchs/nhanes/Default.aspx")

@@ -39,11 +39,8 @@ def convertir_xpt_a_csv(xpt_file, output_dir=None):
     
     # Si ya existe el CSV, preguntar si sobrescribir
     if csv_file.exists():
-        print(f"⚠️  Ya existe: {csv_file.name}")
-        respuesta = input("   ¿Sobrescribir? (s/n): ").lower()
-        if respuesta != 's':
-            print(f"   ⏭️  Omitiendo...")
-            return False
+        print(f"⚠️  Ya existe: {csv_file.name} (omitido)")
+        return False
     
     try:
         print(f"🔄 Convirtiendo: {xpt_path.name} → {csv_file.name}")
