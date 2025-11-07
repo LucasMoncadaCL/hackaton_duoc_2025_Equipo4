@@ -1,44 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { Heart, Shield, Users, Brain, ArrowRight, Activity, Target } from "lucide-react";
 import Link from "next/link";
 
 export default function HomePage() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const formData = new FormData(event.currentTarget);
-    const email = (formData.get("email") as string)?.trim();
-    const password = formData.get("password") as string;
-
-    // Simulación de login (reemplazar con tu lógica real)
-    try {
-      // Credenciales de prueba
-      if (
-        (email === "admin@cardiosense.com" && password === "admin123") ||
-        (email === "usuario@test.com" && password === "user123")
-      ) {
-        // Simular delay de API
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        router.push("/dashboard");
-      } else {
-        throw new Error("Credenciales inválidas");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-white">
       {/* Hero Section */}

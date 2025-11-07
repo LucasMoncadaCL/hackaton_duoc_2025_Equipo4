@@ -1,53 +1,35 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Heart, Shield, ArrowLeft, Mail, Lock } from "lucide-react";
 import Link from "next/link";
-import { auth } from "@/lib/auth";
+import { signInAction } from "@/lib/actions/auth";
+import { useSearchParams } from "next/navigation";
+
+function SubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      {pending ? "Iniciando sesión..." : "Iniciar Sesión"}
+    </button>
+  );
+}
 
 export default function LoginPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const message = searchParams.get("message");
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    const formData = new FormData(event.currentTarget);
-    const email = (formData.get("email") as string)?.trim();
-    const password = formData.get("password") as string;
-
-    try {
-      const result = await auth.login(email, password);
-
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-
-      // Redirigir según el rol
-      if (result.user?.role === "admin") {
-        router.push("/admin");
-      } else {
-        router.push("/dashboard");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error inesperado");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [state, formAction] = useActionState(signInAction, { error: undefined });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-50">
       <div className="flex min-h-screen items-center justify-center px-6 py-12">
         <div className="w-full max-w-md">
-          {/* Botón de regreso */}
           <Link
             href="/"
             className="inline-flex items-center text-sm text-gray-600 hover:text-red-600 mb-8 transition-colors"
@@ -56,9 +38,7 @@ export default function LoginPage() {
             Volver al inicio
           </Link>
 
-          {/* Card de Login */}
           <div className="rounded-2xl border border-white/20 bg-white/80 backdrop-blur-sm p-8 shadow-xl">
-            {/* Header */}
             <div className="text-center mb-8">
               <div className="flex items-center justify-center mb-4">
                 <Heart className="h-10 w-10 text-red-500 mr-3" />
@@ -72,7 +52,6 @@ export default function LoginPage() {
               </p>
             </div>
 
-            {/* Mensaje de éxito desde registro */}
             {message && (
               <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl">
                 <p className="text-sm text-green-600 text-center">
@@ -81,8 +60,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Formulario */}
-            <form className="space-y-5" onSubmit={handleSubmit}>
+            <form className="space-y-5" action={formAction}>
               <div className="space-y-2">
                 <label
                   className="text-sm font-medium text-gray-700"
@@ -125,24 +103,17 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {error ? (
+              {state?.error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                   <p className="text-sm text-red-600 text-center" role="alert">
-                    {error}
+                    {state.error}
                   </p>
                 </div>
-              ) : null}
+              )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
-              </button>
+              <SubmitButton />
             </form>
 
-            {/* Footer del formulario */}
             <div className="mt-6 text-center space-y-4">
               <p className="text-sm text-gray-600">
                 ¿No tienes cuenta?{" "}
@@ -165,7 +136,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Disclaimer */}
           <div className="mt-8 bg-yellow-50/80 backdrop-blur-sm border border-yellow-200 rounded-xl p-4">
             <div className="flex items-center justify-center space-x-2">
               <Shield className="h-4 w-4 text-yellow-600" />
@@ -180,4 +150,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

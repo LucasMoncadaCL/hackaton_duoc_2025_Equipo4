@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireUser, getUserRole } from "@/lib/auth";
+import { requireUser, getUserRole } from "@/lib/auth-helpers";
+import { signOutAction } from "@/lib/actions/auth";
 
 export const runtime = "edge";
 
@@ -46,7 +47,7 @@ export default async function AppDashboardPage() {
             </div>
           </dl>
 
-          <form action="/api/auth/logout" method="post" className="mt-6">
+          <form action={signOutAction} className="mt-6">
             <button
               type="submit"
               className="w-full rounded-md bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80"

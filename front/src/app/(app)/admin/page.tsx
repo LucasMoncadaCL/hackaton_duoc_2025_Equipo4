@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth-helpers";
+import { signOutAction } from "@/lib/actions/auth";
 
 export const runtime = "edge";
 
@@ -47,7 +48,7 @@ export default async function AdminPage() {
         >
           ← Volver al panel principal
         </Link>
-        <form action="/api/auth/logout" method="post">
+        <form action={signOutAction}>
           <button
             type="submit"
             className="rounded-md bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/80"
