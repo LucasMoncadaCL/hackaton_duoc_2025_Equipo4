@@ -15,7 +15,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({
@@ -37,8 +37,15 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Public routes (accessible without auth in development)
+  const isDevelopment = process.env.NODE_ENV === "development";
+  const publicInDev = ["/coach", "/assess"];
+  const isPublicInDev = isDevelopment && publicInDev.some(
+    (route) => request.nextUrl.pathname === route || request.nextUrl.pathname.startsWith(`${route}/`)
+  );
+
   // Protected routes
-  const protectedRoutes = ["/app", "/chat", "/profile", "/admin"];
+  const protectedRoutes = ["/app", "/chat", "/profile", "/admin", "/plan", "/history", "/results"];
   const isProtectedRoute = protectedRoutes.some(
     (route) =>
       request.nextUrl.pathname === route ||
@@ -51,8 +58,8 @@ export async function updateSession(request: NextRequest) {
     (route) => request.nextUrl.pathname === route
   );
 
-  // Redirect to login if accessing protected route without session
-  if (isProtectedRoute && !user) {
+  // Redirect to login if accessing protected route without session (unless public in dev)
+  if (isProtectedRoute && !user && !isPublicInDev) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", request.nextUrl.pathname);
