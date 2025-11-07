@@ -67,6 +67,11 @@ async def handle_chat_message(
     if prediction_made and assessment_result:
         assessment_result["user_id"] = user_id
         assessment_result.setdefault("model_used", "diabetes")
+        
+        # Log assessment data before saving
+        assessment_data_dict = assessment_result.get("assessment_data", {})
+        logger.info(f"Guardando assessment con plan_text: {('plan_text' in assessment_data_dict)}, citations: {('citations' in assessment_data_dict)}")
+        
         saved_assessment = save_assessment(user_id, assessment_result, access_token)
         
         if "id" in saved_assessment:
@@ -75,6 +80,9 @@ async def handle_chat_message(
             # (Opcional) Actualizar la tabla 'analisis_salud' también
             # ...lógica para guardar en 'analisis_salud' si aún se usa...
             assessment_id = saved_assessment["id"]
+            logger.info(f"Assessment guardado exitosamente con ID: {assessment_id}")
+        else:
+            logger.error(f"Error al guardar assessment: {saved_assessment}")
 
     # 7. Devolver respuesta al frontend
     # Volvemos a cargar el historial para que incluya los últimos mensajes

@@ -146,10 +146,12 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
             prediccion_obj = PrediccionResultado(**pred_result)
             
             # Generar respuesta humanizada (nuestro /coach RAG)
+            logger.info("Generando plan con RAG...")
             plan_ia, citas_kb = generar_plan_con_rag(
                 prediccion=prediccion_obj,
                 datos=ml_input
             )
+            logger.info(f"Plan generado exitosamente. Longitud: {len(plan_ia)} caracteres, Citas: {len(citas_kb)}")
 
             # Preparar el resultado final
             final_response_text = (
@@ -163,6 +165,7 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
             user_data["model_used"] = modelo_elegido
             user_data["plan_text"] = plan_ia
             user_data["citations"] = citas_kb
+            logger.info(f"Datos del usuario preparados con plan_text y {len(citas_kb)} citas")
             
             # Preparamos el dict para la tabla 'assessments'
             assessment_data = {
@@ -171,6 +174,8 @@ def process_chat_message(history: List[dict]) -> tuple[str, dict | None, bool]:
                 "risk_level": prediccion_obj.categoria_riesgo.lower(), # 'low', 'moderate', 'high'
                 "drivers": prediccion_obj.drivers
             }
+            
+            logger.info(f"Assessment data preparado: risk_score={prediccion_obj.score}, risk_level={prediccion_obj.categoria_riesgo.lower()}, tiene plan_text={('plan_text' in user_data)}")
             
             return final_response_text, assessment_data, True
 
