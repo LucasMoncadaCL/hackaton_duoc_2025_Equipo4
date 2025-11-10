@@ -10,6 +10,7 @@ __pycache__/
 *.db
 *.pkl
 *.npy
+*.sh
 
 # Virtual envs
 venv/
