@@ -8,6 +8,8 @@ __pycache__/
 *.tmp
 *.sqlite3
 *.db
+*.pkl
+*.npy
 
 # Virtual envs
 venv/
